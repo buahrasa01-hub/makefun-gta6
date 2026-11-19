@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f7a55e">
+<meta name="description" content="Explore Solhaven, run deliveries, and outrun the Harbor Crew.">
+<title>Solhaven Streets</title>
+<link rel="stylesheet" href="./css/style.css">
+<script type="importmap">{"imports":{"three":"./vendor/three/three.module.min.js"}}</script>
+</head>
+<body>
+<div id="game">
+<canvas id="world"></canvas>
+<div id="hud" class="hidden">
+<header class="topbar"><div class="brand">SOLHAVEN <span>STREETS</span></div><div class="stats"><div><small>CASH</small><b id="cash">$0</b></div><div class="health-wrap"><small>VITALS</small><div class="health-track"><i id="health"></i></div></div><div><small>WANTED</small><b id="stars">☆☆☆☆☆</b></div></div></header>
+<section class="mission-card"><small id="mission-kicker">HARBOR CREW • JOB 01</small><h2 id="mission-title">First Delivery</h2><p id="objective">Find the package at the docks</p><span id="distance">— m</span></section>
+<div id="speed" class="speed hidden">000 <small>KM/H</small></div>
+<canvas id="map" width="176" height="176"></canvas><div id="toast"></div><div id="damage"></div>
+</div>
+<div id="screen" class="screen"></div>
+<div id="banner" class="banner hidden"></div>
+</div>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
