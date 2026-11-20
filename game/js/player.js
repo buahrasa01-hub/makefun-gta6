@@ -1,22 +1,27 @@
 import * as THREE from 'three';
-import {cars,people,makeCar} from './traffic.js';
-import {down,takeMouse} from './input.js';
-import {crash,punch as punchSound} from './audio.js';
-export function createPlayer(scene){const g=new THREE.Group(),coat=new THREE.MeshStandardMaterial({color:'#e8aa69'}),skin=new THREE.MeshStandardMaterial({color:'#9c684e'});let body=new THREE.Mesh(new THREE.CylinderGeometry(.32,.4,1.15,10),coat);body.position.y=.85;g.add(body);let head=new THREE.Mesh(new THREE.SphereGeometry(.25,12,10),skin);head.position.y=1.62;g.add(head);scene.add(g);
- const p={group:g,position:g.position,yaw:0,health:100,car:null,cash:0,camYaw:0,camPitch:.28,damageFlash:0,missionCar:null};
- for(let i=0;i<5;i++){const c=makeCar(scene,new THREE.Vector3(-30+i*8,0,30),'#cf5447');c.speed=0;c.yaw=0;c.group.rotation.y=0;if(i===0)p.missionCar=c}return p}
-export function playerCrime(p,crime){p.onCrime?.(crime)}
-export function punchNearby(p,onCrime){let target=null,best=2.8;for(const person of people){if(person.down>0)continue;let d=person.pos.distanceTo(p.position);if(d<best){best=d;target=person}}if(target){target.down=4;target.dir=p.yaw;punchSound();onCrime('assault');return true}return false}
-function nearCar(p){let found=null,dist=4.5;for(const c of cars){if(c.player)continue;let d=c.pos.distanceTo(p.position);if(d<dist){found=c;dist=d}}return found}
-export function enterOrExit(p,onCrime){if(p.car){p.car.player=false;p.car=null;p.group.visible=true;return}const c=nearCar(p);if(!c)return;p.car=c;c.player=true;p.group.visible=false;if(c!==p.missionCar&&!c.stolen){c.stolen=true;onCrime('vehicle theft')}}
-export function damage(p,amount){p.health=Math.max(0,p.health-amount);p.damageFlash=.3}
-export function updatePlayer(p,dt,onCrime){const [mx,my]=takeMouse();p.camYaw-=mx*.004;p.camPitch=THREE.MathUtils.clamp(p.camPitch+my*.003,-.15,.85);
- if(p.car){const c=p.car,steer=(down('KeyA','ArrowLeft')?1:0)-(down('KeyD','ArrowRight')?1:0),gas=(down('KeyW','ArrowUp')?1:0)-(down('KeyS','ArrowDown')?1:0);
-  c.speed+=gas*(down('Space')?17:10)*dt;c.speed*=Math.pow(down('Space')?.88:.985,dt*60);c.speed=THREE.MathUtils.clamp(c.speed,-9,24);c.yaw+=steer*dt*(.7+Math.abs(c.speed)*.055)*Math.sign(c.speed||1);
-  let nx=c.pos.x+Math.sin(c.yaw)*c.speed*dt,nz=c.pos.z+Math.cos(c.yaw)*c.speed*dt;
-  // Buildings are solid; reject a move into a facade.
-const hit=nx < -105 || nx > 105 || nz < -105 || nz > 105 || (Math.abs(nx % 20) > 4.5 && Math.abs(nz % 20) > 4.5);
-  if(hit){if(Math.abs(c.speed)>7){damage(p,Math.min(7,Math.abs(c.speed)*.2));crash()}c.speed=0}else{c.pos.x=nx;c.pos.z=nz}
-  c.group.rotation.y=c.yaw;for(const w of c.wheels)w.rotation.x-=c.speed*dt*1.6;p.position.copy(c.pos);p.yaw=c.yaw;
- }else{let f=(down('KeyW','ArrowUp')?1:0)-(down('KeyS','ArrowDown')?1:0),s=(down('KeyD','ArrowRight')?1:0)-(down('KeyA','ArrowLeft')?1:0);let run=down('ShiftLeft','ShiftRight'),spd=run?8:4.5;let fx=Math.sin(p.camYaw),fz=Math.cos(p.camYaw),rx=Math.cos(p.camYaw),rz=-Math.sin(p.camYaw);let vx=(fx*f+rx*s),vz=(fz*f+rz*s),len=Math.hypot(vx,vz);if(len){p.position.x+=vx/len*spd*dt;p.position.z+=vz/len*spd*dt;p.yaw=Math.atan2(vx,vz);p.group.rotation.y=p.yaw}p.position.x=THREE.MathUtils.clamp(p.position.x,-105,105);p.position.z=THREE.MathUtils.clamp(p.position.z,-105,105)}
- p.damageFlash=Math.max(0,p.damageFlash-dt)}
+import {makeCar} from './traffic.js';
+const skin=new THREE.MeshStandardMaterial({color:'#b77b58'});
+export class Player {
+  constructor(scene,camera,city,input,traffic,audio){this.scene=scene;this.camera=camera;this.city=city;this.input=input;this.traffic=traffic;this.audio=audio;this.pos=new THREE.Vector3(0,0,4);this.heading=0;this.pitch=.22;this.health=100;this.cash=0;this.car=null;this.speed=0;this.shake=0;this.particles=[];this.exhaustClock=0;this.skidClock=0;this.onCrime=()=>{};this.onDamage=()=>{};this.group=new THREE.Group();const body=new THREE.Mesh(new THREE.CapsuleGeometry(.42,.75,4,8),skin);body.position.y=.85;body.castShadow=true;this.group.add(body);const shirt=new THREE.Mesh(new THREE.BoxGeometry(.72,.48,.4),new THREE.MeshStandardMaterial({color:'#e5a84d'}));shirt.position.y=.8;this.group.add(shirt);this.scene.add(this.group)}
+  get x(){return this.car?this.car.position.x:this.pos.x}get z(){return this.car?this.car.position.z:this.pos.z}
+  get point(){return this.car?this.car.position:this.pos}
+  enter(car){if(!car||this.car)return false;this.car=car;car.occupied=true;this.speed=car.speed||0;this.heading=car.heading;if(!car.missionCar&&!car.stolen){car.stolen=true;this.onCrime('car theft',1)}this.group.visible=false;return true}
+  exit(){if(!this.car)return;this.pos.set(this.car.position.x+2,0,this.car.position.z+1);this.car.occupied=false;this.car.speed=0;this.car=null;this.speed=0;this.group.visible=true}
+  damage(amount){this.health=Math.max(0,this.health-amount);this.shake=.48;this.audio?.crash();this.onDamage(amount);if(this.health<=0)this.dead=true}
+  punch(){let target=null,d=2.4;for(const p of this.traffic.peds){const n=Math.hypot(p.mesh.position.x-this.pos.x,p.mesh.position.z-this.pos.z);if(n<d&&!p.hit){d=n;target=p}}if(target){target.hit=true;target.down=5;this.audio?.punch();this.onCrime('assault',1);return true}return false}
+  update(dt){const look=this.input.takeLook();this.heading-=look.x*.004;this.pitch=THREE.MathUtils.clamp(this.pitch+look.y*.003,-.08,.7);
+    if(this.car)this.drive(dt);else this.walk(dt);this.updateParticles(dt);this.cameraFollow(dt)
+  }
+  walk(dt){const e=this.input.down('KeyE');if(e&&!this.wasE){const car=this.traffic.nearestCar(this.pos,4);if(car)this.enter(car)}this.wasE=e;const f=this.input.axis('KeyW','KeyS'),s=this.input.axis('KeyD','KeyA'),run=this.input.down('ShiftLeft')||this.input.down('ShiftRight'),mag=Math.hypot(f,s);if(mag){const angle=this.heading;this.pos.x+=(Math.sin(angle)*f+Math.cos(angle)*s)/mag*(run?8:4.4)*dt;this.pos.z+=(-Math.cos(angle)*f+Math.sin(angle)*s)/mag*(run?8:4.4)*dt;if(this.city.blocked(this.pos.x,this.pos.z,.5)){this.pos.x-= (Math.sin(angle)*f+Math.cos(angle)*s)/mag*(run?8:4.4)*dt;this.pos.z-=(-Math.cos(angle)*f+Math.sin(angle)*s)/mag*(run?8:4.4)*dt}}
+    this.speed=mag*(run?8:4.4);this.group.position.copy(this.pos);this.group.rotation.y=this.heading;if(this.input.consumePunch())this.punch();
+  }
+  drive(dt){const c=this.car,e=this.input.down('KeyE');if(e&&!this.wasE)this.exit();this.wasE=e;if(!this.car)return;const car=this.car,throttle=this.input.axis('KeyW','KeyS'),steer=this.input.axis('KeyA','KeyD');const brake=this.input.down('Space');this.speed+=throttle*(brake?10:7)*dt;this.speed*=Math.pow(brake ? .12 : .985,dt*60);this.speed=THREE.MathUtils.clamp(this.speed,-6,18);this.heading-=steer*Math.sign(this.speed||1)*dt*(.8+Math.abs(this.speed)*.035);const ox=car.position.x,oz=car.position.z;car.position.x+=Math.sin(this.heading)*this.speed*dt;car.position.z-=Math.cos(this.heading)*this.speed*dt;
+    if(this.city.blocked(car.position.x,car.position.z,1.5)){car.position.x=ox;car.position.z=oz;if(Math.abs(this.speed)>4){car.damage+=Math.abs(this.speed)*dt;this.damage(2+Math.abs(this.speed)*.18)}this.speed=0}
+    car.heading=this.heading;car.speed=this.speed;car.mesh.rotation.y=this.heading;for(const w of car.wheels)w.rotation.x-=this.speed*dt*1.8;this.exhaustClock-=dt;this.skidClock-=dt;if(Math.abs(this.speed)>1&&this.exhaustClock<=0){this.exhaustClock=.16;this.addParticle('#b7b7aa',.12,.62,car.position.x-Math.sin(this.heading)*2,.35,car.position.z+Math.cos(this.heading)*2)}if(brake&&Math.abs(this.speed)>7&&this.skidClock<=0){this.skidClock=.1;for(const side of [-1,1])this.addParticle('#777b77',.2,.45,car.position.x+Math.cos(this.heading)*side, .16,car.position.z+Math.sin(this.heading)*side)}
+    for(const p of this.traffic.peds)if(!p.hit&&Math.hypot(p.mesh.position.x-car.position.x,p.mesh.position.z-car.position.z)<1.7&&Math.abs(this.speed)>3){p.hit=true;p.down=5;this.onCrime('pedestrian hit',1);this.audio?.crash()}
+  }
+  addParticle(color,size,life,x,y,z){const mesh=new THREE.Mesh(new THREE.SphereGeometry(size,6,4),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.48,depthWrite:false}));mesh.position.set(x,y,z);this.scene.add(mesh);this.particles.push({mesh,life,max:life})}
+  updateParticles(dt){for(let i=this.particles.length-1;i>=0;i--){const p=this.particles[i];p.life-=dt;p.mesh.position.y+=dt*(p.max>.55?.65:.1);p.mesh.scale.multiplyScalar(1+dt*.8);p.mesh.material.opacity=.48*Math.max(0,p.life/p.max);if(p.life<=0){this.scene.remove(p.mesh);p.mesh.geometry.dispose();p.mesh.material.dispose();this.particles.splice(i,1)}}}
+  cameraFollow(dt){const h=this.heading,dist=this.car?9:7,height=this.car?4.2:3.5;const target=new THREE.Vector3(this.x-Math.sin(h)*dist,this.car?1.2:1.5,this.z+Math.cos(h)*dist);target.y+=height;this.camera.position.lerp(target,1-Math.exp(-dt*5));if(this.shake>0){this.shake=Math.max(0,this.shake-dt);this.camera.position.x+=(Math.random()-.5)*this.shake;this.camera.position.y+=(Math.random()-.5)*this.shake}this.camera.lookAt(this.x,this.car?1.1:1.2,this.z)}
+  reset(){if(this.car)this.exit();this.pos.set(0,0,4);this.health=100;this.cash=0;this.dead=false;this.speed=0}
+}

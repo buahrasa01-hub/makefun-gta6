@@ -11,6 +11,7 @@ Solhaven Streets — an open-world crime game: explore the sun-soaked city of So
 ```sh
 node serve.ts
 ```
+
 Then open http://localhost:8080 and play with keyboard and mouse.
 
 ---

@@ -1,35 +1,28 @@
 import * as THREE from 'three';
-export const sceneData={markers:[],buildings:[]};
-const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.86});
-const asphalt=mat('#424c4b'),side=mat('#c4bba3'),sand=mat('#dfb77d'),green=mat('#4b7554');
-const roadPaint=mat("#d8c9a2");
-const rand=(a,b)=>a+Math.random()*(b-a);
-export function isRoad(x,z){return Math.abs((x+100)%20)<4||Math.abs((z+100)%20)<4}
-export function randomRoadPoint(){const vertical=Math.random()<.5, lane=Math.floor(rand(-4,5))*20;return new THREE.Vector3(vertical?lane+rand(-2,2):rand(-92,92),0,vertical?rand(-92,92):lane+rand(-2,2))}
-function box(parent,x,y,z,w,h,d,m){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;parent.add(o);return o}
-function cylinder(parent,x,y,z,r,h,m){const o=new THREE.Mesh(new THREE.CylinderGeometry(r*.8,r,h,8),m);o.position.set(x,y,z);o.castShadow=true;parent.add(o);return o}
-export function makeMarker(pos,color='#ffd16f'){const g=new THREE.Group();g.position.copy(pos);const ring=new THREE.Mesh(new THREE.TorusGeometry(2,.13,8,32),new THREE.MeshBasicMaterial({color}));ring.rotation.x=Math.PI/2;ring.position.y=.15;g.add(ring);const beam=new THREE.Mesh(new THREE.CylinderGeometry(.08,.6,5,12,1,true),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.22,side:THREE.DoubleSide}));beam.position.y=2.5;g.add(beam);sceneData.markers.push(g);return g}
-export function buildCity(scene){
- const ground=box(scene,0,-.6,0,220,1,220,mat('#91a887'));ground.receiveShadow=true;
- for(let n=-5;n<=5;n++){box(scene,n*20,.01,0,8,.08,210,asphalt);box(scene,0,.01,n*20,210,.08,8,asphalt);
-  for(let p=-95;p<100;p+=8){box(scene,n*20-3,.07,p,.12,.025,3,roadPaint);box(scene,p,.07,n*20+3,3,.025,.12,roadPaint)}}
- // sidewalks follow the block edges
- for(let n=-5;n<=5;n++){box(scene,n*20+6,.1,0,3,.2,210,side);box(scene,n*20-6,.1,0,3,.2,210,side);box(scene,0,.1,n*20+6,210,.2,3,side);box(scene,0,.1,n*20-6,210,.2,3,side)}
- const palette=['#d98c61','#d4b985','#839b91','#c87561','#e1c18b','#8eaaa0','#e1a766'];
- for(let gx=-4;gx<=4;gx++)for(let gz=-4;gz<=4;gz++){if(Math.random()<.1)continue;let x=gx*20+rand(-3,3),z=gz*20+rand(-3,3),w=rand(7,11),d=rand(7,11),h=rand(5,22);let b=box(scene,x,h/2+.2,z,w,h,d,mat(palette[Math.floor(Math.random()*palette.length)]));sceneData.buildings.push(b);box(scene,x,h+.3,z,w*.8,.25,d*.8,mat('#e1c590'));if(Math.random()<.55)box(scene,x+1,h+.9,z+1,1,1.3,1,mat('#87918a'));if(Math.random()<.35)cylinder(scene,x-2,h+.45,z-2,.28,.9,green)}
- const pole=mat('#45524c'),leaf=mat('#397451'),trunk=mat('#986744'),line=mat('#ead8a9');
- // Lamps and palms spaced along the promenades.
- for(let p=-90;p<=90;p+=30){for(const q of [-7,7]){let l=cylinder(scene,q,2.2,p,.12,4.2,pole);l.position.y=2.2;box(scene,q,4.2,p,.65,.12,.24,mat('#f3cc79'));}
-  let x=104,z=p; cylinder(scene,x,3,z,.45,6,trunk);for(let k=0;k<5;k++){let a=k*Math.PI*2/5;let f=new THREE.Mesh(new THREE.ConeGeometry(.48,5,5),leaf);f.position.set(x+Math.cos(a)*1.4,6.1,z+Math.sin(a)*1.4);f.rotation.z=-Math.cos(a)*.35;f.rotation.x=Math.sin(a)*.35;scene.add(f)}}
- // Coastal strip and harbor piers occupy the east edge.
- box(scene,112,-.05,0,22,.3,220,sand);box(scene,124,-.1,0,18,.3,220,mat('#397d83'));
- for(let z of [-52,-24,8,40,72]){box(scene,106,.15,z,22,.3,7,mat('#805f4a'));for(let x of [98,114])for(let dz of [-2.8,2.8])cylinder(scene,x,-.8,z+dz,.18,2.2,trunk);}
- // A little waterfront warehouse and stacked cargo.
- box(scene,83,4,49,15,8,13,mat('#c9825b'));box(scene,83,8.2,49,15,.35,13,mat('#526259'));
- for(let i=0;i<7;i++){let c=mat(['#bd6652','#e0a14e','#507d7a'][i%3]);box(scene,94+(i%2)*3,.9+Math.floor(i/2)*1.7,42+Math.floor(i/2)*2.4,2.7,1.6,2.2,c)}
- // Roadside parked cars are supplied by traffic; decorative crosswalks.
- for(let n=-4;n<=4;n++)for(let z of [-4,4])for(let k=-2;k<=2;k++)box(scene,n*20+k*.7,.08,z+n*20,.36,.03,1.7,line);
- const sun=new THREE.Mesh(new THREE.SphereGeometry(3,16,12),new THREE.MeshBasicMaterial({color:'#ffdf9d'}));sun.position.set(-70,70,-100);scene.add(sun);
- const dock=new THREE.Vector3(100,0,49),garage=new THREE.Vector3(-40,0,-40),mint=new THREE.Vector3(-60,0,60),harbor=new THREE.Vector3(95,0,-45);
- return {dock,garage,mint,harbor};
+export const WORLD=200, BLOCK=20;
+const mat=c=>new THREE.MeshStandardMaterial({color:c,roughness:.82});
+export class City {
+  constructor(scene){this.scene=scene;this.buildings=[];this.markers={};this.roadMat=mat('#343e40');this.facadeTexture=this.makeFacade();this.build()}
+  makeFacade(){const c=document.createElement('canvas');c.width=128;c.height=128;const x=c.getContext('2d');x.fillStyle='#d9c7a7';x.fillRect(0,0,128,128);for(let y=10;y<128;y+=24)for(let a=9;a<128;a+=23){x.fillStyle=(Math.random()<.18?'#b87b4c':'#52747a');x.fillRect(a,y,12,14);x.fillStyle='#eedda9';x.fillRect(a+5,y,2,14)}const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(2,2);return t}
+  box(x,y,z,w,h,d,color){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(color));m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;this.scene.add(m);return m}
+  build(){
+    const ground=new THREE.Mesh(new THREE.PlaneGeometry(230,230),mat('#b6aa7e'));ground.rotation.x=-Math.PI/2;ground.position.y=-.12;ground.receiveShadow=true;this.scene.add(ground);
+    for(let i=-5;i<=5;i++){const p=i*BLOCK;this.box(p,.005,0,6,.02,220,'#303a3d');this.box(0,.006,p,220,.02,6,'#303a3d');for(const side of [-1,1]){this.box(p+side*4,.02,0,1.2,.08,220,'#c9bd97');this.box(0,.02,p+side*4,220,.08,1.2,'#c9bd97')}
+      for(let j=-5;j<5;j++){const q=j*BLOCK+10;this.box(p,.035,q,.12,.025,3,'#e3d9ad');this.box(q,.035,p,3,.025,.12,'#e3d9ad')}}
+    for(let x=-90;x<=90;x+=20)for(let z=-90;z<=90;z+=20){const h=7+Math.random()*24,w=8+Math.random()*3,d=8+Math.random()*3,c=['#e8b97d','#cf805d','#aeb69d','#d9d2bc','#bf9e83','#78908a'][Math.floor(Math.random()*6)];const b=this.box(x,h/2,z,w,h,d,c);b.material.map=this.facadeTexture;b.material.needsUpdate=true;this.box(x,h+.3,z,w*.92,.55,d*.92,'#6e7771');if(Math.random()<.42)this.box(x+(Math.random()-.5)*3,h+.9,z,.8,1.2,.8,'#d8ac61');this.buildings.push({x,z,w:w/2,d:d/2})}
+    this.props();this.coast();this.placeMarkers()
+  }
+  props(){
+    for(let i=-4;i<=4;i++)for(let j=-4;j<=4;j++){const x=i*20+((j%2)*7),z=j*20+7;if(Math.random()<.53)this.palm(x,z);if(Math.random()<.32)this.lamp(x+4,z+4)}
+  }
+  palm(x,z){this.box(x,2.4,z,.45,4.8,.45,'#80543a');for(let a=0;a<6;a++){const leaf=new THREE.Mesh(new THREE.ConeGeometry(.42,4,5),mat('#34775e'));leaf.position.set(x+Math.cos(a)*1.2,4.4,z+Math.sin(a)*1.2);leaf.rotation.z=Math.PI/2.8;leaf.rotation.y=-a*.9;this.scene.add(leaf)}}
+  lamp(x,z){this.box(x,3,z,.16,6,.16,'#3d4e4f');const light=new THREE.Mesh(new THREE.SphereGeometry(.34,8,6),mat('#ffe4a1'));light.position.set(x,6,z);this.scene.add(light)}
+  coast(){this.box(0,-.08,-113,230,.1,28,'#e2c486');this.box(0,-.12,-133,230,.12,18,'#459ba1');this.box(118,-.08,0,26,.1,230,'#c19a67');this.box(138,-.12,0,18,.12,230,'#347f88');for(let i=-4;i<=4;i++)this.box(111,.25,i*20,12,.5,5,'#99724e')}
+  placeMarkers(){this.markers.docks=this.marker(new THREE.Vector3(104,0,-70),'#ffd16a');this.markers.garage=this.marker(new THREE.Vector3(-80,0,80),'#ff6460');this.markers.mint=this.marker(new THREE.Vector3(-80,0,-80),'#ffd16a');this.markers.harbor=this.marker(new THREE.Vector3(105,0,70),'#ffd16a')}
+  marker(pos,color){const g=new THREE.Group();g.position.copy(pos);const ring=new THREE.Mesh(new THREE.TorusGeometry(2.5,.18,8,32),mat(color));ring.rotation.x=Math.PI/2;ring.position.y=.16;g.add(ring);const beam=new THREE.Mesh(new THREE.CylinderGeometry(.12,.45,3,10,1,true),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.24,depthWrite:false}));beam.position.y=1.5;g.add(beam);this.scene.add(g);return g}
+  isRoad(x,z){const rx=Math.abs(x-Math.round(x/BLOCK)*BLOCK),rz=Math.abs(z-Math.round(z/BLOCK)*BLOCK);return rx<3||rz<3}
+  randomRoadPoint(){const horizontal=Math.random()<.5,n=Math.floor(Math.random()*9-4),along=Math.random()*180-90,lane=Math.random()<.5?-1.25:1.25;return horizontal?new THREE.Vector3(along,0,n*BLOCK+lane):new THREE.Vector3(n*BLOCK+lane,0,along)}
+  sidewalkPoint(){const horizontal=Math.random()<.5,n=Math.floor(Math.random()*9-4),along=Math.random()*180-90,side=Math.random()<.5?-4.5:4.5;return horizontal?new THREE.Vector3(along,0,n*BLOCK+side):new THREE.Vector3(n*BLOCK+side,0,along)}
+  blocked(x,z,r=1){return x<-108||x>108||z<-108||z>108||this.buildings.some(b=>Math.abs(x-b.x)<b.w+r&&Math.abs(z-b.z)<b.d+r)}
+  update(dt){for(const g of Object.values(this.markers)){g.rotation.y+=dt*.6;g.children[0].rotation.z+=dt*.45}}
 }

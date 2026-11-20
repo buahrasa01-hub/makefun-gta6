@@ -1,12 +1,9 @@
-const keys=new Set();
-export const input={keys,dx:0,dy:0,dragging:false,consume(code){if(keys.has(code)){keys.delete(code);return true}return false}};
-window.addEventListener('keydown',e=>{keys.add(e.code);if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault()});
-window.addEventListener('keyup',e=>keys.delete(e.code));
-const canvas=document.querySelector('#world');
-canvas.addEventListener('pointerdown',e=>{if(e.button===0)input.dragging=true;canvas.setPointerCapture(e.pointerId)});
-canvas.addEventListener('pointerup',()=>input.dragging=false);
-canvas.addEventListener('pointercancel',()=>input.dragging=false);
-canvas.addEventListener('pointermove',e=>{if(input.dragging){input.dx+=e.movementX;input.dy+=e.movementY}});
-export function takeMouse(){const d=[input.dx,input.dy];input.dx=input.dy=0;return d}
-export function down(...codes){return codes.some(c=>keys.has(c))}
-canvas.addEventListener('contextmenu',e=>e.preventDefault());
+export class Input {
+  constructor(el){this.keys=Object.create(null);this.drag=false;this.dx=0;this.dy=0;this.punch=false;this.el=el;this.bind()}
+  bind(){window.addEventListener('keydown',e=>{this.keys[e.code]=true;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault()});window.addEventListener('keyup',e=>{this.keys[e.code]=false});this.el.addEventListener('pointerdown',e=>{if(e.button===0){this.drag=true;this.punch=true;this.x=e.clientX;this.y=e.clientY;this.el.setPointerCapture(e.pointerId)}});this.el.addEventListener('pointermove',e=>{if(!this.drag)return;this.dx+=(e.clientX-this.x);this.dy+=(e.clientY-this.y);this.x=e.clientX;this.y=e.clientY});this.el.addEventListener('pointerup',()=>this.drag=false);window.addEventListener('blur',()=>{this.keys=Object.create(null);this.drag=false})}
+  down(code){return !!this.keys[code]}
+  axis(positive,negative){return (this.down(positive)?1:0)-(this.down(negative)?1:0)}
+  consumePunch(){const p=this.punch;this.punch=false;return p}
+  clear(){this.keys=Object.create(null);this.punch=false}
+  takeLook(){const v={x:this.dx,y:this.dy};this.dx=this.dy=0;return v}
+}

@@ -1,34 +1,30 @@
 import * as THREE from 'three';
-import {randomRoadPoint} from './city.js';
-export const cars=[],people=[];
-const colors=['#e16d4e','#5a9b9a','#d2b367','#738b9b','#d9d2bc','#7d6caa','#4f665a'];
-const material=c=>new THREE.MeshStandardMaterial({color:c,roughness:.65});
-export function makeCar(scene,pos=new THREE.Vector3(),color=colors[Math.floor(Math.random()*colors.length)],police=false){
- const g=new THREE.Group(),paint=material(police?'#263e55':color),glass=material('#8ec5c3'),rubber=material('#252a29');
- const body=new THREE.Mesh(new THREE.BoxGeometry(2.1,.8,4),paint);body.position.y=.85;body.castShadow=true;g.add(body);
- const cabin=new THREE.Mesh(new THREE.BoxGeometry(1.6,.75,1.9),glass);cabin.position.set(0,1.52,-.15);cabin.castShadow=true;g.add(cabin);
- const wheels=[];for(const x of [-1.08,1.08])for(const z of [-1.35,1.35]){const w=new THREE.Mesh(new THREE.CylinderGeometry(.38,.38,.22,12),rubber);w.rotation.z=Math.PI/2;w.position.set(x,.43,z);g.add(w);wheels.push(w)}
- if(police){for(const x of [-.5,.5]){let l=new THREE.Mesh(new THREE.BoxGeometry(.4,.18,.35),material(x<0?'#e64a42':'#4b9ef4'));l.position.set(x,2,.1);g.add(l)}}
- g.position.copy(pos);scene.add(g);const c={group:g,pos:g.position,yaw:0,speed:0,wheels,police,player:false,stolen:false,health:100,route:Math.random()*400};cars.push(c);return c;
+const paint=c=>new THREE.MeshStandardMaterial({color:c,roughness:.65,metalness:.12});
+export function makeCar(scene,pos,color='#d26143',police=false){
+  const root=new THREE.Group();root.position.copy(pos);const body=new THREE.Mesh(new THREE.BoxGeometry(2.1,.72,4),paint(police?'#e6e8e4':color));body.position.y=.75;body.castShadow=true;root.add(body);
+  const cabin=new THREE.Mesh(new THREE.BoxGeometry(1.62,.72,1.8),paint(police?'#304d60':'#9ec1bd'));cabin.position.set(0,1.42,-.1);cabin.castShadow=true;root.add(cabin);
+  const wheels=[];for(const x of [-1.04,1.04])for(const z of [-1.28,1.28]){const w=new THREE.Mesh(new THREE.CylinderGeometry(.38,.38,.23,12),paint('#20272a'));w.rotation.z=Math.PI/2;w.position.set(x,.42,z);root.add(w);wheels.push(w)}
+  if(police){const bar=new THREE.Mesh(new THREE.BoxGeometry(.8,.2,.3),paint('#dc5150'));bar.position.set(0,1.82,0);root.add(bar)}
+  scene.add(root);return {mesh:root,position:root.position,heading:0,speed:0,maxSpeed:police?13:8,wheels,police,parked:false,occupied:false,damage:0,color,stolen:false}
 }
-function makePerson(scene,pos){const g=new THREE.Group(),skin=material('#bd8768'),cloth=material(colors[Math.floor(Math.random()*colors.length)]);let torso=new THREE.Mesh(new THREE.CylinderGeometry(.26,.34,.9,8),cloth);torso.position.y=.85;g.add(torso);let head=new THREE.Mesh(new THREE.SphereGeometry(.22,10,8),skin);head.position.y=1.5;g.add(head);let legs=[];for(let x of [-.14,.14]){let leg=new THREE.Mesh(new THREE.BoxGeometry(.18,.65,.22),material('#4a514d'));leg.position.set(x,.32,0);g.add(leg);legs.push(leg)}g.position.copy(pos);scene.add(g);let p={group:g,pos:g.position,dir:Math.random()*6.28,speed:1+Math.random(),down:0,legs};people.push(p);return p}
-export function initTraffic(scene){for(let i=0;i<14;i++){const c=makeCar(scene,randomRoadPoint());c.yaw=Math.random()<.5?0:Math.PI/2;c.group.rotation.y=c.yaw;c.speed=3+Math.random()*3}for(let i=0;i<6;i++){const parked=makeCar(scene,new THREE.Vector3(-88+i*34,0,-8),colors[(i+2)%colors.length]);parked.speed=0;parked.yaw=0;parked.group.rotation.y=0}for(let i=0;i<20;i++)makePerson(scene,new THREE.Vector3((Math.random()-.5)*170,0,(Math.random()-.5)*170))}
-export function updateTraffic(dt,player,onCrime){
- for(const c of cars){if(c.player)continue;c.route+=dt;let x=c.pos.x,z=c.pos.z;
-  if(Math.abs(x)>94||Math.abs(z)>94){c.yaw+=Math.PI; c.group.rotation.y=c.yaw}
-  // Traffic cruises on avenue axes and occasionally turns at an intersection.
-  if(c.route>18){c.route=0;if(Math.random()<.35)c.yaw+=Math.PI/2*(Math.random()<.5?-1:1);c.group.rotation.y=c.yaw}
-  c.pos.x+=Math.sin(c.yaw)*c.speed*dt;c.pos.z+=Math.cos(c.yaw)*c.speed*dt;
-  for(const w of c.wheels)w.rotation.x-=dt*c.speed*1.8;
- }
- for(const p of people){if(p.down>0){p.down-=dt;p.group.rotation.x=Math.min(1.3,(1-p.down)*1.5);continue}p.group.rotation.x=0;
-  let threat=player.position.distanceTo(p.pos)<5;for(const c of cars)if(!c.player&&c.pos.distanceTo(p.pos)<3)threat=true;
-  if(threat){p.dir=Math.atan2(p.pos.x-player.position.x,p.pos.z-player.position.z);p.speed=3.5}
-  else if(Math.random()<dt*.12)p.dir+=Math.random()-.5;
-  p.pos.x+=Math.sin(p.dir)*p.speed*dt;p.pos.z+=Math.cos(p.dir)*p.speed*dt;
-  if(Math.abs(p.pos.x)>96||Math.abs(p.pos.z)>96)p.dir+=Math.PI;
-  p.group.rotation.y=p.dir;for(const l of p.legs)l.rotation.x=Math.sin(performance.now()*.008+p.pos.x)*.45;
-  const driven=player.car;if(driven&&driven.pos.distanceTo(p.pos)<1.8&&Math.abs(driven.speed)>5){p.down=4;p.speed=0;onCrime('pedestrian struck');}
- }
+export class Traffic {
+  constructor(scene,city){this.scene=scene;this.city=city;this.cars=[];this.peds=[];this.player=null;this.spawn()}
+  spawn(){for(let i=0;i<14;i++){const axis=Math.random()<.5?'z':'x',dir=Math.random()<.5?1:-1,lane=Math.random()<.5?-1.25:1.25,n=Math.floor(Math.random()*9-4),along=Math.random()*180-90;const p=axis==='z'?new THREE.Vector3(n*20+lane,0,along):new THREE.Vector3(along,0,n*20+lane);const c=makeCar(this.scene,p,['#c9513d','#e4ba5e','#5e9c91','#54728c','#d6d3c5'][i%5]);c.axis=axis;c.dir=dir;c.lane=lane;c.heading=axis==='z'?(dir>0?Math.PI:0):(dir>0?-Math.PI/2:Math.PI/2);c.mesh.rotation.y=c.heading;c.speed=4+Math.random()*4;c.parked=i%7===0;if(c.parked)c.speed=0;c.route=i%4;this.cars.push(c)}
+    for(let i=0;i<20;i++){const m=new THREE.Mesh(new THREE.CapsuleGeometry(.34,.82,3,6),paint(['#d0a572','#b87459','#4b6d68','#eee0c6'][i%4]));m.position.copy(this.city.sidewalkPoint());m.position.y=.85;m.castShadow=true;this.scene.add(m);this.peds.push({mesh:m,goal:this.city.sidewalkPoint(),speed:1+Math.random()*.7,down:0,hit:false})}}
+  update(dt,player,onPedHit=()=>{}){
+    for(const c of this.cars){if(c.parked||c.occupied)continue;let v= c.speed;
+      for(const o of this.cars)if(o!==c&&Math.hypot(o.position.x-c.position.x,o.position.z-c.position.z)<5)v=Math.min(v,Math.max(0,o.speed-1));
+      if(c.axis==='z'){c.position.z+=c.dir*v*dt;if(Math.abs(c.position.z)>98){c.axis='x';c.dir=Math.random()<.5?1:-1;c.position.z=Math.max(-4,Math.min(4,Math.round(c.position.z/20)))*20+c.lane;c.heading=c.dir>0?-Math.PI/2:Math.PI/2}}
+      else{c.position.x+=c.dir*v*dt;if(Math.abs(c.position.x)>98){c.axis='z';c.dir=Math.random()<.5?1:-1;c.position.x=Math.max(-4,Math.min(4,Math.round(c.position.x/20)))*20+c.lane;c.heading=c.dir>0?Math.PI:0}}
+      c.mesh.rotation.y=c.heading;for(const w of c.wheels)w.rotation.x-=v*dt*1.6
+    }
+    for(const p of this.peds){if(p.down>0){p.down-=dt;p.mesh.rotation.z=Math.min(1.3,(1-p.down)*2);continue}p.mesh.rotation.z=0;
+      let flee=null;for(const c of this.cars)if(Math.hypot(c.position.x-p.mesh.position.x,c.position.z-p.mesh.position.z)<5){flee=c;break}
+      let dx=p.goal.x-p.mesh.position.x,dz=p.goal.z-p.mesh.position.z;if(flee){dx=p.mesh.position.x-flee.position.x;dz=p.mesh.position.z-flee.position.z}
+      const len=Math.hypot(dx,dz)||1;p.mesh.position.x+=dx/len*p.speed*dt;p.mesh.position.z+=dz/len*p.speed*dt;p.mesh.rotation.y=Math.atan2(dx,dz);
+      if(!flee&&len<1.5)p.goal=this.city.sidewalkPoint();if(player&&Math.hypot(player.x-p.mesh.position.x,player.z-p.mesh.position.z)<1&&player.speed>5&&!p.hit){p.hit=true;p.down=5;onPedHit(p)}if(len>12)p.goal=this.city.sidewalkPoint();if(p.hit&&p.down<=0){p.hit=false;p.mesh.position.copy(this.city.sidewalkPoint());p.mesh.position.y=.85}
+    }
+  }
+  nearestCar(pos,max=4){let found=null,d=max;for(const c of this.cars){const n=Math.hypot(c.position.x-pos.x,c.position.z-pos.z);if(n<d&&!c.occupied){found=c;d=n}}return found}
+  destroy(){for(const c of this.cars)this.scene.remove(c.mesh);for(const p of this.peds)this.scene.remove(p.mesh)}
 }
-export function trafficCounts(){return {cars:cars.length,pedestrians:people.length}}

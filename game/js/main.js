@@ -1,39 +1,37 @@
 import * as THREE from 'three';
-import {buildCity} from './city.js';
-import {initTraffic,updateTraffic,cars} from './traffic.js';
-import {createPlayer,updatePlayer,enterOrExit,damage} from './player.js';
-import {addCrime,updatePolice,wanted,resetWanted,police} from './police.js';
-import {createMissions,updateMission,advanceMission,retryMission} from './missions.js';
-import {updateHud,toast} from './hud.js';
-import {click,jingle} from './audio.js';
-import {down} from './input.js';
-const canvas=document.querySelector('#world'),renderer=new THREE.WebGLRenderer({canvas,antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;
-const scene=new THREE.Scene();scene.background=new THREE.Color('#e9aa79');scene.fog=new THREE.Fog('#e9aa79',105,230);const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,.1,500);scene.add(new THREE.HemisphereLight('#ffdfb3','#586f68',2));const sun=new THREE.DirectionalLight('#fff0ce',3);sun.position.set(-45,80,-40);sun.castShadow=true;scene.add(sun);
-const places=buildCity(scene);initTraffic(scene);const player=createPlayer(scene),missions=createMissions(scene,places,player);let mode='title',last=performance.now(),saved={cash:0,index:0,best:0};try{saved=JSON.parse(localStorage.getItem('solhaven-save'))||saved}catch{}
-const screen=document.querySelector('#screen'),hud=document.querySelector('#hud'),banner=document.querySelector('#banner');
-function save(){saved.cash=player.cash;saved.index=missions.index;saved.best=Math.max(saved.best,player.cash);localStorage.setItem('solhaven-save',JSON.stringify(saved))}
-function setMode(next){mode=next;hud.classList.toggle('hidden',next==='title');screen.classList.toggle('hidden',next==='play');if(next==='play')screen.innerHTML='';else drawScreen()}
-function drawScreen(){if(mode==='title'){screen.innerHTML='<article class="panel"><span class="eyebrow">A COASTAL CITY ORIGINAL</span><div class="best">BEST CASH $'+saved.best.toLocaleString()+'</div><h1>SOLHAVEN<br><em>STREETS</em></h1><p>Kia came to the coast for a clean start. The Harbor Crew has other plans.</p><div class="controls">WASD move · SHIFT run · drag mouse orbit<br>E enter / exit car · click punch · SPACE handbrake<br>ESC pause</div><div class="actions"><button id="start">Start Story</button>'+(saved.index?'<button class="secondary" id="continue">Continue</button>':'')+'</div></article>';document.querySelector('#start').onclick=()=>{click();startGame(false)};document.querySelector('#continue')?.addEventListener('click',()=>{click();startGame(true)});return}
- let title='PAUSED',copy='Take a breath. Solhaven will be here.',buttons='<button id="resume">Back to the Street</button><button class="secondary" id="quit">Title</button>';
- if(mode==='mission-complete'){title='JOB COMPLETE';copy='$'+missions.earned+' added to your pocket. The Harbor Crew has another call.';buttons='<button id="next">Next Mission</button>'}
- if(mode==='mission-failed'){title='DELIVERY MISSED';copy='The window closed. Get back out there and try again.';buttons='<button id="retry">Retry</button>'}
- if(mode==='busted'){title='BUSTED';copy='You went down with $'+player.cash+' in your pocket.';buttons='<button id="retry">Try Again</button>'}
- if(mode==='story-complete'){title='STORY COMPLETE';copy='Solhaven belongs to the Harbor Crew. Total cash: $'+player.cash.toLocaleString();buttons='<button id="again">Play Again</button>'}
- screen.innerHTML='<article class="panel"><span class="eyebrow">SOLHAVEN STREETS</span><h1>'+title+'</h1><p>'+copy+'</p><div class="actions">'+buttons+'</div></article>';
- document.querySelector('#resume')?.addEventListener('click',()=>setMode('play'));document.querySelector('#quit')?.addEventListener('click',()=>setMode('title'));
- document.querySelector('#next')?.addEventListener('click',()=>{advanceMission(missions,scene);save();setMode('play')});
- document.querySelector('#retry')?.addEventListener('click',()=>{player.health=100;resetWanted();retryMission(missions,scene);setMode('play')});
- document.querySelector('#again')?.addEventListener('click',()=>{player.cash=0;missions.index=0;retryMission(missions,scene);resetWanted();setMode('title')});
+import {City} from './city.js';
+import {Input} from './input.js';
+import {Traffic} from './traffic.js';
+import {Player} from './player.js';
+import {Police} from './police.js';
+import {Missions} from './missions.js';
+import {HUD} from './hud.js';
+import {AudioFX} from './audio.js';
+const SAVE='solhaven-save-v1';
+class Game {
+  constructor(){this.host=document.querySelector('#game');this.screen=document.querySelector('#screen');this.title=document.querySelector('#screen-title');this.copy=document.querySelector('#screen-copy');this.extra=document.querySelector('#screen-extra');this.primary=document.querySelector('#primary');this.secondary=document.querySelector('#secondary');this.state='title';this.clock=new THREE.Clock();this.best=0;this.build();this.bind();this.showTitle();this.applyShot();this.frame()}
+  build(){
+    this.scene=new THREE.Scene();this.scene.background=new THREE.Color('#91c7c1');this.scene.fog=new THREE.Fog('#91c7c1',105,205);
+    this.camera=new THREE.PerspectiveCamera(62,innerWidth/innerHeight,.1,400);this.camera.position.set(0,5,12);
+    this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));this.renderer.setSize(innerWidth,innerHeight);this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.host.appendChild(this.renderer.domElement);
+    this.scene.add(new THREE.HemisphereLight('#e8fbef','#6a5340',2));const sun=new THREE.DirectionalLight('#fff0cf',3.1);sun.position.set(-45,80,-35);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-115;sun.shadow.camera.right=115;sun.shadow.camera.top=115;sun.shadow.camera.bottom=-115;this.scene.add(sun);
+    const orb=new THREE.Mesh(new THREE.SphereGeometry(8,20,14),new THREE.MeshBasicMaterial({color:'#ffd78a'}));orb.position.set(65,72,-105);this.scene.add(orb);
+    this.city=new City(this.scene);this.input=new Input(this.renderer.domElement);this.traffic=new Traffic(this.scene,this.city);this.audio=new AudioFX();this.player=new Player(this.scene,this.camera,this.city,this.input,this.traffic,this.audio);this.police=new Police(this.scene,this.city,this.traffic,this.player,this.audio);this.missions=new Missions(this.scene,this.city,this.traffic,this.player,this.police,this.audio);this.hud=new HUD();this.connect();this.resize=()=>{this.camera.aspect=innerWidth/innerHeight;this.camera.updateProjectionMatrix();this.renderer.setSize(innerWidth,innerHeight)};window.addEventListener('resize',this.resize)
+  }
+  connect(){this.player.onCrime=(reason,level)=>{this.police.raise(reason,level);this.hud.notify('WANTED · '+reason.toUpperCase())};this.player.onDamage=()=>this.hud.damaged();this.missions.onComplete=info=>{this.save(true);this.show('mission-complete',info.title+' COMPLETE','Package delivered. The crew remembers.', 'REWARD  $'+info.reward+'<br>TOTAL CASH  $'+info.cash,'Next Mission')};this.missions.onFail=()=>{this.save(false);this.show('mission-failed','DELIVERY FAILED','The route went cold. Reset and try again.','','Retry Run')};this.missions.onStory=cash=>{this.save(true);this.show('story-complete','STORY COMPLETE','Solhaven knows your name. The Harbor Crew is set.','TOTAL CASH  $'+cash,'Play Again')}}
+  bind(){this.primary.addEventListener('click',()=>this.action());this.secondary.addEventListener('click',()=>{this.audio.start();this.loadContinue()});window.addEventListener('keydown',e=>{if(e.repeat)return;if((e.code==='Escape'||e.code==='KeyP')&&this.state==='play'){this.show('pause','PAUSED','The streets can wait.','','Resume');this.hud.hide()}else if((e.code==='Escape'||e.code==='KeyP')&&this.state==='pause')this.resume()})}
+  readSave(){try{return JSON.parse(localStorage.getItem(SAVE)||'null')}catch{return null}}
+  save(advance=false){const old=this.readSave(),cash=this.player.cash;this.best=Math.max(this.best,cash,old?.bestCash||0);localStorage.setItem(SAVE,JSON.stringify({cash,index:Math.min(5,this.missions.index+(advance?1:0)),bestCash:this.best}))}
+  show(mode,title,copy,extra,button){this.state=mode;this.screen.classList.remove('hidden');this.title.innerHTML=title;this.copy.textContent=copy;this.extra.innerHTML=extra||'';this.primary.textContent=button||'Continue';this.secondary.classList.add('hidden');this.hud.hide()}
+  showTitle(){const data=this.readSave();this.best=Math.max(data?.bestCash||0,0);this.show('title','SOLHAVEN<br><em>STREETS</em>','A new route. A new crew. Keep moving.','BEST CASH  $'+this.best,'Start Run');if(data){this.secondary.textContent='Continue · $'+data.cash;this.secondary.classList.remove('hidden')}}
+  startFresh(){this.audio.start();this.player.reset();this.player.cash=0;this.police.setLevel(0);this.missions.index=0;this.missions.missionCar=null;this.missions.begin();this.enterPlay()}
+  loadContinue(){const data=this.readSave();if(!data){this.startFresh();return}this.audio.start();this.player.reset();this.player.cash=data.cash||0;this.best=Math.max(data.bestCash||0,0);this.missions.index=Math.min(5,data.index||0);if(this.missions.index>=5){this.show('story-complete','STORY COMPLETE','The Harbor Crew is set.','TOTAL CASH  $'+this.player.cash,'Play Again');return}this.police.setLevel(0);this.missions.begin();this.enterPlay()}
+  enterPlay(){this.state='play';this.screen.classList.add('hidden');this.hud.show();this.audio.start()}
+  resume(){this.enterPlay()}
+  action(){this.audio.start();if(this.state==='title'||this.state==='story-complete'){this.startFresh();return}if(this.state==='pause'){this.resume();return}if(this.state==='mission-complete'){this.missions.next();if(this.state!=='story-complete')this.enterPlay();return}if(this.state==='mission-failed'){this.missions.retry();this.enterPlay();return}if(this.state==='busted'){this.player.dead=false;this.player.health=100;this.player.pos.set(0,0,4);this.missions.done=false;this.missions.begin();this.enterPlay()}}
+  applyShot(){const mode=new URLSearchParams(location.search).get('shot');if(!mode)return;this.audio.start();if(mode==='play'){this.startFresh();this.player.pos.set(0,0,40);this.player.heading=0;this.player.group.position.copy(this.player.pos);return}
+    if(mode==='chase'){this.startFresh();this.player.pos.set(0,0,40);const car=this.traffic.cars[0];car.parked=true;car.missionCar=true;car.position.set(0,0,40);car.heading=0;this.player.enter(car);this.player.heading=0;this.missions.index=3;this.missions.begin();this.missions.time=90;this.police.setLevel(3);return}
+    if(mode==='mission'){this.startFresh();this.player.cash=200;this.missions.index=0;this.missions.done=true;this.hud.show();this.hud.update(0,this.player,this.city,this.traffic,this.police,this.missions);this.show('mission-complete','FIRST DELIVERY COMPLETE','A clean handoff for the Harbor Crew.','REWARD  $200<br>TOTAL CASH  $200','Next Mission');this.hud.show();this.hud.update(0,this.player,this.city,this.traffic,this.police,this.missions)}}
+  frame(){requestAnimationFrame(()=>this.frame());const dt=Math.min(.05,this.clock.getDelta());if(this.state==='play'){this.player.update(dt);this.traffic.update(dt,{x:this.player.x,z:this.player.z,speed:this.player.speed},()=>{this.police.raise('pedestrian hit',1);this.hud.notify('WANTED · PEDESTRIAN HIT')});this.police.update(dt);this.missions.update(dt);this.city.update(dt);this.audio.update(this.player.speed,this.police.level>0);this.hud.update(dt,this.player,this.city,this.traffic,this.police,this.missions);if(this.player.dead)this.show('busted','BUSTED','The run is over. Your crew can pull you out.','CASH  $'+this.player.cash,'Try Again')}this.renderer.render(this.scene,this.camera)}
 }
-function startGame(continuing){if(!continuing){player.cash=0;missions.index=0;retryMission(missions,scene)}else{player.cash=saved.cash;while(missions.index<saved.index&&missions.index<5)advanceMission(missions,scene)}player.health=100;resetWanted();player.position.set(-12,0,-12);setMode('play')}
-drawScreen();
-player.onCrime=reason=>{addCrime(reason);toast('WANTED: '+reason.toUpperCase())};
-window.addEventListener('keydown',e=>{if((e.code==='Escape'||e.code==='KeyP')&&mode==='play')setMode('paused');else if(e.code==='Escape'&&mode==='paused')setMode('play');if(e.code==='KeyE'&&mode==='play')enterOrExit(player,player.onCrime)});
-canvas.addEventListener('click',()=>{if(mode==='play')punchNearby(player,player.onCrime)});
-const shot=new URLSearchParams(location.search).get('shot');
-if(shot==='play'){player.position.set(-12,0,-12);setMode('play')}
-if(shot==='chase'){player.position.set(-18,0,4);player.car=player.missionCar;player.car.player=true;player.car.pos.copy(player.position);missions.index=3;missions.time=90;missions.target=places.mint;missions.marker.position.copy(places.mint);addCrime('screenshot pursuit',3);setMode('play')}
-if(shot==='mission'){player.cash=200;missions.earned=200;missions.done=true;missions.index=0;player.position.set(8,0,8);document.querySelector('#cash').textContent='$200';setMode('mission-complete')}
-function frame(now){requestAnimationFrame(frame);const dt=Math.min(.04,(now-last)/1000);last=now;if(mode==='play'){updatePlayer(player,dt,player.onCrime);updateTraffic(dt,player,player.onCrime);window.currentWanted=wanted.level;updatePolice(scene,dt,player);updateMission(missions,dt,player,scene,lastFlag=>{save();setMode(lastFlag?'story-complete':'mission-complete')},()=>setMode('mission-failed'));if(player.health<=0)setMode('busted');updateHud(player,missions,wanted,cars,police);if(player.damageFlash)banner.style.opacity=String(Math.random()*.15)}
- const target=player.position,angle=player.camYaw,dist=player.car?10:8;const desired=new THREE.Vector3(target.x+Math.sin(angle)*dist,target.y+4+dist*player.camPitch,target.z+Math.cos(angle)*dist);camera.position.lerp(desired,.1);camera.lookAt(target.x,target.y+1.1,target.z);renderer.render(scene,camera)}
-requestAnimationFrame(frame);window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+new Game();
