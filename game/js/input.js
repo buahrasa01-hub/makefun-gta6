@@ -1,9 +1,79 @@
 export class Input {
-  constructor(el){this.keys=Object.create(null);this.drag=false;this.dx=0;this.dy=0;this.punch=false;this.el=el;this.bind()}
-  bind(){window.addEventListener('keydown',e=>{this.keys[e.code]=true;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault()});window.addEventListener('keyup',e=>{this.keys[e.code]=false});this.el.addEventListener('pointerdown',e=>{if(e.button===0){this.drag=true;this.punch=true;this.x=e.clientX;this.y=e.clientY;this.el.setPointerCapture(e.pointerId)}});this.el.addEventListener('pointermove',e=>{if(!this.drag)return;this.dx+=(e.clientX-this.x);this.dy+=(e.clientY-this.y);this.x=e.clientX;this.y=e.clientY});this.el.addEventListener('pointerup',()=>this.drag=false);window.addEventListener('blur',()=>{this.keys=Object.create(null);this.drag=false})}
-  down(code){return !!this.keys[code]}
-  axis(positive,negative){return (this.down(positive)?1:0)-(this.down(negative)?1:0)}
-  consumePunch(){const p=this.punch;this.punch=false;return p}
-  clear(){this.keys=Object.create(null);this.punch=false}
-  takeLook(){const v={x:this.dx,y:this.dy};this.dx=this.dy=0;return v}
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.keys = new Set();
+    this.pressed = new Set();
+    this.yaw = 0.6;
+    this.pitch = 0.42;
+    this.dragging = false;
+    this.lastX = 0;
+    this.lastY = 0;
+    this.enabled = true;
+
+    const blocked = new Set([
+      'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'
+    ]);
+
+    window.addEventListener('keydown', (event) => {
+      if (blocked.has(event.code)) event.preventDefault();
+      if (!event.repeat) this.pressed.add(event.code);
+      this.keys.add(event.code);
+    });
+
+    window.addEventListener('keyup', (event) => {
+      this.keys.delete(event.code);
+    });
+
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+      this.pressed.clear();
+      this.dragging = false;
+    });
+
+    canvas.addEventListener('pointerdown', (event) => {
+      if (!this.enabled || event.button !== 0) return;
+      this.pressed.add('Mouse0');
+      this.dragging = true;
+      this.lastX = event.clientX;
+      this.lastY = event.clientY;
+      canvas.setPointerCapture(event.pointerId);
+    });
+
+    canvas.addEventListener('pointermove', (event) => {
+      if (!this.dragging) return;
+      const dx = event.clientX - this.lastX;
+      const dy = event.clientY - this.lastY;
+      this.lastX = event.clientX;
+      this.lastY = event.clientY;
+      this.yaw -= dx * 0.006;
+      if (this.yaw > Math.PI) this.yaw -= Math.PI * 2;
+      if (this.yaw < -Math.PI) this.yaw += Math.PI * 2;
+      this.pitch = Math.max(0.12, Math.min(0.95, this.pitch + dy * 0.004));
+    });
+
+    const stopDrag = () => { this.dragging = false; };
+    canvas.addEventListener('pointerup', stopDrag);
+    canvas.addEventListener('pointercancel', stopDrag);
+    window.addEventListener('contextmenu', (event) => event.preventDefault());
+  }
+
+  down(code) { return this.keys.has(code); }
+
+  consume(code) {
+    if (!this.pressed.has(code)) return false;
+    this.pressed.delete(code);
+    return true;
+  }
+
+  endFrame() { this.pressed.clear(); }
+
+  moveAxis() {
+    let forward = 0;
+    let sideways = 0;
+    if (this.down('KeyW') || this.down('ArrowUp')) forward += 1;
+    if (this.down('KeyS') || this.down('ArrowDown')) forward -= 1;
+    if (this.down('KeyA') || this.down('ArrowLeft')) sideways -= 1;
+    if (this.down('KeyD') || this.down('ArrowRight')) sideways += 1;
+    return { forward, sideways };
+  }
 }

@@ -1,37 +1,361 @@
 import * as THREE from 'three';
-import {City} from './city.js';
-import {Input} from './input.js';
-import {Traffic} from './traffic.js';
-import {Player} from './player.js';
-import {Police} from './police.js';
-import {Missions} from './missions.js';
-import {HUD} from './hud.js';
-import {AudioFX} from './audio.js';
-const SAVE='solhaven-save-v1';
-class Game {
-  constructor(){this.host=document.querySelector('#game');this.screen=document.querySelector('#screen');this.title=document.querySelector('#screen-title');this.copy=document.querySelector('#screen-copy');this.extra=document.querySelector('#screen-extra');this.primary=document.querySelector('#primary');this.secondary=document.querySelector('#secondary');this.state='title';this.clock=new THREE.Clock();this.best=0;this.build();this.bind();this.showTitle();this.applyShot();this.frame()}
-  build(){
-    this.scene=new THREE.Scene();this.scene.background=new THREE.Color('#91c7c1');this.scene.fog=new THREE.Fog('#91c7c1',105,205);
-    this.camera=new THREE.PerspectiveCamera(62,innerWidth/innerHeight,.1,400);this.camera.position.set(0,5,12);
-    this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));this.renderer.setSize(innerWidth,innerHeight);this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.host.appendChild(this.renderer.domElement);
-    this.scene.add(new THREE.HemisphereLight('#e8fbef','#6a5340',2));const sun=new THREE.DirectionalLight('#fff0cf',3.1);sun.position.set(-45,80,-35);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-115;sun.shadow.camera.right=115;sun.shadow.camera.top=115;sun.shadow.camera.bottom=-115;this.scene.add(sun);
-    const orb=new THREE.Mesh(new THREE.SphereGeometry(8,20,14),new THREE.MeshBasicMaterial({color:'#ffd78a'}));orb.position.set(65,72,-105);this.scene.add(orb);
-    this.city=new City(this.scene);this.input=new Input(this.renderer.domElement);this.traffic=new Traffic(this.scene,this.city);this.audio=new AudioFX();this.player=new Player(this.scene,this.camera,this.city,this.input,this.traffic,this.audio);this.police=new Police(this.scene,this.city,this.traffic,this.player,this.audio);this.missions=new Missions(this.scene,this.city,this.traffic,this.player,this.police,this.audio);this.hud=new HUD();this.connect();this.resize=()=>{this.camera.aspect=innerWidth/innerHeight;this.camera.updateProjectionMatrix();this.renderer.setSize(innerWidth,innerHeight)};window.addEventListener('resize',this.resize)
+import { GameAudio } from './audio.js';
+import { Input } from './input.js';
+import { createCity, makeCar, LOCATIONS } from './city.js';
+import { Traffic } from './traffic.js';
+import { Player } from './player.js';
+import { Police } from './police.js';
+import { Missions } from './missions.js';
+import { Garage } from './garage.js';
+import { Hud } from './hud.js';
+
+const SAVE_KEY = 'solhaven-streets-v2';
+const canvas = document.getElementById('world');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9ed7e8);
+scene.fog = new THREE.Fog(0xa9d8e6, 230, 640);
+
+const camera = new THREE.PerspectiveCamera(
+  62, window.innerWidth / window.innerHeight, 0.1, 1400
+);
+camera.position.set(20, 16, 90);
+
+const skyLight = new THREE.HemisphereLight(0xdff2ff, 0xa38360, 2.1);
+scene.add(skyLight);
+const sunLight = new THREE.DirectionalLight(0xfff1cd, 2.2);
+sunLight.position.set(180, 280, -160);
+scene.add(sunLight);
+const sunDisc = new THREE.Mesh(
+  new THREE.SphereGeometry(30, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xffe5a0, fog: false })
+);
+sunDisc.position.set(460, 320, -520);
+scene.add(sunDisc);
+
+const game = {
+  state: 'title',
+  time: 0,
+  scene,
+  camera,
+  renderer,
+  bestCash: 0,
+  save() {},
+  onMissionComplete() {},
+  onMissionFailed() {},
+  onBusted() {},
+  onStoryComplete() {}
+};
+
+game.input = new Input(canvas);
+game.audio = new GameAudio();
+game.city = createCity(scene);
+game.player = new Player(game);
+game.traffic = new Traffic(game);
+game.police = new Police(game);
+game.missions = new Missions(game);
+game.garage = new Garage(game);
+game.hud = new Hud(game);
+
+function loadSave() {
+  try {
+    const raw = window.localStorage.getItem(SAVE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
   }
-  connect(){this.player.onCrime=(reason,level)=>{this.police.raise(reason,level);this.hud.notify('WANTED · '+reason.toUpperCase())};this.player.onDamage=()=>this.hud.damaged();this.missions.onComplete=info=>{this.save(true);this.show('mission-complete',info.title+' COMPLETE','Package delivered. The crew remembers.', 'REWARD  $'+info.reward+'<br>TOTAL CASH  $'+info.cash,'Next Mission')};this.missions.onFail=()=>{this.save(false);this.show('mission-failed','DELIVERY FAILED','The route went cold. Reset and try again.','','Retry Run')};this.missions.onStory=cash=>{this.save(true);this.show('story-complete','STORY COMPLETE','Solhaven knows your name. The Harbor Crew is set.','TOTAL CASH  $'+cash,'Play Again')}}
-  bind(){this.primary.addEventListener('click',()=>this.action());this.secondary.addEventListener('click',()=>{this.audio.start();this.loadContinue()});window.addEventListener('keydown',e=>{if(e.repeat)return;if((e.code==='Escape'||e.code==='KeyP')&&this.state==='play'){this.show('pause','PAUSED','The streets can wait.','','Resume');this.hud.hide()}else if((e.code==='Escape'||e.code==='KeyP')&&this.state==='pause')this.resume()})}
-  readSave(){try{return JSON.parse(localStorage.getItem(SAVE)||'null')}catch{return null}}
-  save(advance=false){const old=this.readSave(),cash=this.player.cash;this.best=Math.max(this.best,cash,old?.bestCash||0);localStorage.setItem(SAVE,JSON.stringify({cash,index:Math.min(5,this.missions.index+(advance?1:0)),bestCash:this.best}))}
-  show(mode,title,copy,extra,button){this.state=mode;this.screen.classList.remove('hidden');this.title.innerHTML=title;this.copy.textContent=copy;this.extra.innerHTML=extra||'';this.primary.textContent=button||'Continue';this.secondary.classList.add('hidden');this.hud.hide()}
-  showTitle(){const data=this.readSave();this.best=Math.max(data?.bestCash||0,0);this.show('title','SOLHAVEN<br><em>STREETS</em>','A new route. A new crew. Keep moving.','BEST CASH  $'+this.best,'Start Run');if(data){this.secondary.textContent='Continue · $'+data.cash;this.secondary.classList.remove('hidden')}}
-  startFresh(){this.audio.start();this.player.reset();this.player.cash=0;this.police.setLevel(0);this.missions.index=0;this.missions.missionCar=null;this.missions.begin();this.enterPlay()}
-  loadContinue(){const data=this.readSave();if(!data){this.startFresh();return}this.audio.start();this.player.reset();this.player.cash=data.cash||0;this.best=Math.max(data.bestCash||0,0);this.missions.index=Math.min(5,data.index||0);if(this.missions.index>=5){this.show('story-complete','STORY COMPLETE','The Harbor Crew is set.','TOTAL CASH  $'+this.player.cash,'Play Again');return}this.police.setLevel(0);this.missions.begin();this.enterPlay()}
-  enterPlay(){this.state='play';this.screen.classList.add('hidden');this.hud.show();this.audio.start()}
-  resume(){this.enterPlay()}
-  action(){this.audio.start();if(this.state==='title'||this.state==='story-complete'){this.startFresh();return}if(this.state==='pause'){this.resume();return}if(this.state==='mission-complete'){this.missions.next();if(this.state!=='story-complete')this.enterPlay();return}if(this.state==='mission-failed'){this.missions.retry();this.enterPlay();return}if(this.state==='busted'){this.player.dead=false;this.player.health=100;this.player.pos.set(0,0,4);this.missions.done=false;this.missions.begin();this.enterPlay()}}
-  applyShot(){const mode=new URLSearchParams(location.search).get('shot');if(!mode)return;this.audio.start();if(mode==='play'){this.startFresh();this.player.pos.set(0,0,40);this.player.heading=0;this.player.group.position.copy(this.player.pos);return}
-    if(mode==='chase'){this.startFresh();this.player.pos.set(0,0,40);const car=this.traffic.cars[0];car.parked=true;car.missionCar=true;car.position.set(0,0,40);car.heading=0;this.player.enter(car);this.player.heading=0;this.missions.index=3;this.missions.begin();this.missions.time=90;this.police.setLevel(3);return}
-    if(mode==='mission'){this.startFresh();this.player.cash=200;this.missions.index=0;this.missions.done=true;this.hud.show();this.hud.update(0,this.player,this.city,this.traffic,this.police,this.missions);this.show('mission-complete','FIRST DELIVERY COMPLETE','A clean handoff for the Harbor Crew.','REWARD  $200<br>TOTAL CASH  $200','Next Mission');this.hud.show();this.hud.update(0,this.player,this.city,this.traffic,this.police,this.missions)}}
-  frame(){requestAnimationFrame(()=>this.frame());const dt=Math.min(.05,this.clock.getDelta());if(this.state==='play'){this.player.update(dt);this.traffic.update(dt,{x:this.player.x,z:this.player.z,speed:this.player.speed},()=>{this.police.raise('pedestrian hit',1);this.hud.notify('WANTED · PEDESTRIAN HIT')});this.police.update(dt);this.missions.update(dt);this.city.update(dt);this.audio.update(this.player.speed,this.police.level>0);this.hud.update(dt,this.player,this.city,this.traffic,this.police,this.missions);if(this.player.dead)this.show('busted','BUSTED','The run is over. Your crew can pull you out.','CASH  $'+this.player.cash,'Try Again')}this.renderer.render(this.scene,this.camera)}
 }
-new Game();
+
+function save() {
+  const previous = loadSave();
+  game.bestCash = Math.max(
+    game.bestCash, previous && previous.bestCash ? previous.bestCash : 0, game.player.cash
+  );
+  try {
+    window.localStorage.setItem(SAVE_KEY, JSON.stringify({
+      cash: game.player.cash,
+      missionIndex: game.missions.index,
+      bestCash: game.bestCash,
+      garage: game.garage.save()
+    }));
+  } catch {
+    /* storage may be unavailable */
+  }
+}
+game.save = save;
+
+function setState(next) {
+  game.state = next;
+  game.hud.dim(next !== 'play');
+}
+
+function unlockAudio() { game.audio.unlock(); }
+
+function resetRun() {
+  policeReset();
+  playerReset();
+}
+
+function policeReset() { game.police.reset(); }
+
+function playerReset() {
+  game.player.reset(new THREE.Vector3(20, 0, 60));
+  game.input.yaw = 0.6;
+  game.input.pitch = 0.42;
+  game.camera.position.set(20, 16, 90);
+}
+
+function newGame() {
+  const previous = loadSave();
+  game.bestCash = Math.max(game.bestCash, previous && previous.bestCash ? previous.bestCash : 0);
+  game.player.cash = 0;
+  game.garage.load([]);
+  resetRun();
+  game.missions.start(0);
+  game.hud.hideScreen();
+  setState('play');
+  unlockAudio();
+}
+
+function continueGame() {
+  const data = loadSave();
+  if (!data) return newGame();
+  resetRun();
+  game.player.cash = data.cash || 0;
+  game.garage.load(data.garage);
+  game.missions.start(Number.isInteger(data.missionIndex) ? data.missionIndex : 0);
+  game.hud.hideScreen();
+  setState('play');
+  unlockAudio();
+}
+
+function retryRun() {
+  resetRun();
+  game.missions.retry();
+  game.hud.hideScreen();
+  setState('play');
+}
+
+function nextMission() {
+  game.missions.next();
+  if (game.state !== 'story-complete') {
+    game.hud.hideScreen();
+    setState('play');
+  }
+}
+
+function toTitle() {
+  game.missions.abandon();
+  game.police.reset();
+  setState('title');
+  game.hud.showTitle(game.bestCash, !!loadSave());
+}
+
+game.onMissionComplete = (reward) => {
+  save();
+  setState('mission-complete');
+  game.hud.showComplete(reward, game.player.cash, game.missions.data.title);
+};
+
+game.onMissionFailed = (reason) => {
+  setState('mission-failed');
+  game.hud.showFailed(reason);
+};
+
+game.onBusted = () => {
+  save();
+  setState('busted');
+  game.hud.showBusted(game.player.cash);
+};
+
+game.onStoryComplete = () => {
+  save();
+  setState('story-complete');
+  game.hud.showStoryComplete(game.player.cash);
+};
+
+function bindButton(id, action) {
+  const button = game.hud.screen.querySelector(id);
+  if (button) button.onclick = () => { unlockAudio(); action(); };
+}
+
+function bindScreenButtons() {
+  bindButton('#btn-start', newGame);
+  bindButton('#btn-continue', continueGame);
+  bindButton('#btn-resume', () => { game.hud.hideScreen(); setState('play'); });
+  bindButton('#btn-retry', retryRun);
+  bindButton('#btn-next', nextMission);
+  bindButton('#btn-title', toTitle);
+  bindButton('#btn-again', newGame);
+}
+
+function handlePlayKeys() {
+  const input = game.input;
+  if (input.consume('Escape') || input.consume('KeyP')) {
+    game.hud.showPause(game.player.cash);
+    setState('pause');
+    return;
+  }
+  if (input.consume('KeyG')) {
+    if (game.missions.index >= 3 && game.garage.nearby()) {
+      game.garage.openPicker();
+    } else if (game.missions.index < 3) {
+      game.hud.toast('GARAGE OPENS AFTER MISSION 3');
+    } else {
+      game.hud.toast('STAND IN THE GOLD GARAGE MARKER');
+    }
+  }
+}
+
+function handleGarageKeys() {
+  const codes = [
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    'KeyW', 'KeyS', 'Enter', 'Space', 'Escape', 'KeyG'
+  ];
+  for (const code of codes) {
+    if (game.input.consume(code)) game.garage.handleKey(code);
+  }
+}
+
+function handleScreenKeys() {
+  const input = game.input;
+  if (game.state === 'pause') {
+    if (input.consume('Escape') || input.consume('KeyP')) {
+      game.hud.hideScreen();
+      setState('play');
+    }
+  } else if (game.state === 'mission-complete') {
+    if (input.consume('Enter')) nextMission();
+  } else if (game.state === 'mission-failed' || game.state === 'busted') {
+    if (input.consume('Enter') || input.consume('KeyR')) retryRun();
+  }
+}
+
+let lastScreenState = '';
+let lastFrame = performance.now();
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000));
+  lastFrame = now;
+  game.time += dt;
+
+  if (game.state === 'play') {
+    handlePlayKeys();
+  } else if (game.state === 'garage') {
+    handleGarageKeys();
+  } else {
+    handleScreenKeys();
+  }
+
+  if (game.state === 'play') {
+    game.player.update(dt, game.time);
+    game.traffic.update(dt, game.time);
+    game.police.update(dt, game.time);
+    game.missions.update(dt, game.time);
+    game.garage.update(dt);
+  } else if (game.state === 'garage') {
+    game.traffic.update(dt, game.time);
+  }
+
+  game.audio.update(dt, {
+    driving: game.player.driving && game.state === 'play',
+    speed: game.player.speed,
+    wanted: game.police.wanted,
+    heli: game.police.heliUp
+  });
+  game.hud.update(dt);
+  renderer.render(scene, camera);
+  game.input.endFrame();
+
+  if (game.state !== lastScreenState) {
+    lastScreenState = game.state;
+    bindScreenButtons();
+  }
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+function shotCar(color) {
+  const car = makeCar(color, 'normal');
+  car.own = true;
+  car.parked = false;
+  car.mesh.position.set(LOCATIONS.center.x, 0, LOCATIONS.center.z + 20);
+  car.angle = Math.PI / 2;
+  car.speed = 21;
+  scene.add(car.mesh);
+  game.traffic.cars.push(car);
+  game.player.enterCar(car, false);
+  return car;
+}
+
+function shotCamera() {
+  const position = game.player.position;
+  camera.position.set(position.x - 22, 15, position.z - 28);
+  camera.lookAt(position.x, 2, position.z);
+}
+
+function setupShot(kind) {
+  if (kind === 'mission') {
+    game.player.cash = 200;
+    game.missions.forceIndex(0);
+    game.hud.cash.textContent = '200';
+    game.hud.showComplete(200, 200, 'First Delivery');
+    setState('mission-complete');
+    return;
+  }
+
+  if (kind === 'play') {
+    game.player.cash = 1850;
+    game.missions.start(0);
+    game.player.mesh.position.set(20, 0, 60);
+    camera.position.set(38, 12, 86);
+    camera.lookAt(20, 2, 60);
+    game.hud.hideScreen();
+    setState('play');
+    return;
+  }
+
+  if (kind === 'cover' || kind === 'chase') {
+    game.player.cash = kind === 'cover' ? 3250 : 2400;
+    game.missions.forceIndex(3);
+    game.police.setWanted(3);
+    shotCar(0xd94a3e);
+    const position = game.player.position;
+    for (let index = 0; index < 2; index++) {
+      const car = game.police.spawnCar();
+      car.mesh.position.set(
+        position.x + (index ? 12 : -12), 0, position.z - 22 - index * 9
+      );
+      car.angle = 0;
+      car.speed = 19;
+    }
+    if (kind === 'cover') {
+      game.police.forceHeli = true;
+      game.police.spawnHelicopter();
+      game.police.helicopter.group.position.set(position.x + 30, 52, position.z - 26);
+    }
+    shotCamera();
+    game.hud.hideScreen();
+    setState('play');
+  }
+}
+
+const shot = new URLSearchParams(window.location.search).get('shot');
+if (shot) {
+  setupShot(shot);
+} else {
+  const previous = loadSave();
+  if (previous && previous.bestCash) game.bestCash = previous.bestCash;
+  game.hud.showTitle(game.bestCash, !!previous);
+  setState('title');
+}
+
+requestAnimationFrame(frame);

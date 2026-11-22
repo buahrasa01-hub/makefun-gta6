@@ -1,30 +1,242 @@
 import * as THREE from 'three';
-const paint=c=>new THREE.MeshStandardMaterial({color:c,roughness:.65,metalness:.12});
-export function makeCar(scene,pos,color='#d26143',police=false){
-  const root=new THREE.Group();root.position.copy(pos);const body=new THREE.Mesh(new THREE.BoxGeometry(2.1,.72,4),paint(police?'#e6e8e4':color));body.position.y=.75;body.castShadow=true;root.add(body);
-  const cabin=new THREE.Mesh(new THREE.BoxGeometry(1.62,.72,1.8),paint(police?'#304d60':'#9ec1bd'));cabin.position.set(0,1.42,-.1);cabin.castShadow=true;root.add(cabin);
-  const wheels=[];for(const x of [-1.04,1.04])for(const z of [-1.28,1.28]){const w=new THREE.Mesh(new THREE.CylinderGeometry(.38,.38,.23,12),paint('#20272a'));w.rotation.z=Math.PI/2;w.position.set(x,.42,z);root.add(w);wheels.push(w)}
-  if(police){const bar=new THREE.Mesh(new THREE.BoxGeometry(.8,.2,.3),paint('#dc5150'));bar.position.set(0,1.82,0);root.add(bar)}
-  scene.add(root);return {mesh:root,position:root.position,heading:0,speed:0,maxSpeed:police?13:8,wheels,police,parked:false,occupied:false,damage:0,color,stolen:false}
-}
+import {
+  makeCar, syncCarVisual, randomRoadPoint, roadCoordinate,
+  BLOCK, ROAD_HALF, LIMIT, box
+} from './city.js';
+
+const CAR_COLORS = [
+  0xd9a24a, 0x5a9fbd, 0xb85c5c, 0xd7d9cf, 0x4f7f6a,
+  0x8d6aa8, 0xc77a3d, 0x647b9e, 0xe0c15c, 0x8fa3a0
+];
+
 export class Traffic {
-  constructor(scene,city){this.scene=scene;this.city=city;this.cars=[];this.peds=[];this.player=null;this.spawn()}
-  spawn(){for(let i=0;i<14;i++){const axis=Math.random()<.5?'z':'x',dir=Math.random()<.5?1:-1,lane=Math.random()<.5?-1.25:1.25,n=Math.floor(Math.random()*9-4),along=Math.random()*180-90;const p=axis==='z'?new THREE.Vector3(n*20+lane,0,along):new THREE.Vector3(along,0,n*20+lane);const c=makeCar(this.scene,p,['#c9513d','#e4ba5e','#5e9c91','#54728c','#d6d3c5'][i%5]);c.axis=axis;c.dir=dir;c.lane=lane;c.heading=axis==='z'?(dir>0?Math.PI:0):(dir>0?-Math.PI/2:Math.PI/2);c.mesh.rotation.y=c.heading;c.speed=4+Math.random()*4;c.parked=i%7===0;if(c.parked)c.speed=0;c.route=i%4;this.cars.push(c)}
-    for(let i=0;i<20;i++){const m=new THREE.Mesh(new THREE.CapsuleGeometry(.34,.82,3,6),paint(['#d0a572','#b87459','#4b6d68','#eee0c6'][i%4]));m.position.copy(this.city.sidewalkPoint());m.position.y=.85;m.castShadow=true;this.scene.add(m);this.peds.push({mesh:m,goal:this.city.sidewalkPoint(),speed:1+Math.random()*.7,down:0,hit:false})}}
-  update(dt,player,onPedHit=()=>{}){
-    for(const c of this.cars){if(c.parked||c.occupied)continue;let v= c.speed;
-      for(const o of this.cars)if(o!==c&&Math.hypot(o.position.x-c.position.x,o.position.z-c.position.z)<5)v=Math.min(v,Math.max(0,o.speed-1));
-      if(c.axis==='z'){c.position.z+=c.dir*v*dt;if(Math.abs(c.position.z)>98){c.axis='x';c.dir=Math.random()<.5?1:-1;c.position.z=Math.max(-4,Math.min(4,Math.round(c.position.z/20)))*20+c.lane;c.heading=c.dir>0?-Math.PI/2:Math.PI/2}}
-      else{c.position.x+=c.dir*v*dt;if(Math.abs(c.position.x)>98){c.axis='z';c.dir=Math.random()<.5?1:-1;c.position.x=Math.max(-4,Math.min(4,Math.round(c.position.x/20)))*20+c.lane;c.heading=c.dir>0?Math.PI:0}}
-      c.mesh.rotation.y=c.heading;for(const w of c.wheels)w.rotation.x-=v*dt*1.6
+  constructor(game) {
+    this.game = game;
+    this.scene = game.scene;
+    this.city = game.city;
+    this.cars = [];
+    this.peds = [];
+    const rand = this.city.rand;
+
+    for (let index = 0; index < 14; index++) this.spawnDriver();
+    for (let index = 0; index < 12; index++) this.spawnParked();
+    for (let index = 0; index < 20; index++) this.spawnPedestrian();
+  }
+
+  spawnDriver() {
+    const rand = this.city.rand;
+    const point = randomRoadPoint(rand);
+    const color = CAR_COLORS[Math.floor(rand() * CAR_COLORS.length)];
+    const car = makeCar(color, 'traffic');
+    car.mesh.position.set(point.x, 0, point.z);
+    car.angle = point.angle;
+    car.speed = 9 + rand() * 7;
+    car.parked = false;
+    car.ai = { cruise: 11 + rand() * 7, turnTimer: rand() * 6 };
+    this.scene.add(car.mesh);
+    this.cars.push(car);
+    return car;
+  }
+
+  spawnParked() {
+    const rand = this.city.rand;
+    const point = randomRoadPoint(rand);
+    const color = CAR_COLORS[Math.floor(rand() * CAR_COLORS.length)];
+    const car = makeCar(color, 'parked');
+    const side = rand() < 0.5 ? 1 : -1;
+    if (Math.abs(Math.sin(point.angle)) > 0.5) {
+      car.mesh.position.set(point.x + side * 10.5, 0, point.z);
+    } else {
+      car.mesh.position.set(point.x, 0, point.z + side * 10.5);
     }
-    for(const p of this.peds){if(p.down>0){p.down-=dt;p.mesh.rotation.z=Math.min(1.3,(1-p.down)*2);continue}p.mesh.rotation.z=0;
-      let flee=null;for(const c of this.cars)if(Math.hypot(c.position.x-p.mesh.position.x,c.position.z-p.mesh.position.z)<5){flee=c;break}
-      let dx=p.goal.x-p.mesh.position.x,dz=p.goal.z-p.mesh.position.z;if(flee){dx=p.mesh.position.x-flee.position.x;dz=p.mesh.position.z-flee.position.z}
-      const len=Math.hypot(dx,dz)||1;p.mesh.position.x+=dx/len*p.speed*dt;p.mesh.position.z+=dz/len*p.speed*dt;p.mesh.rotation.y=Math.atan2(dx,dz);
-      if(!flee&&len<1.5)p.goal=this.city.sidewalkPoint();if(player&&Math.hypot(player.x-p.mesh.position.x,player.z-p.mesh.position.z)<1&&player.speed>5&&!p.hit){p.hit=true;p.down=5;onPedHit(p)}if(len>12)p.goal=this.city.sidewalkPoint();if(p.hit&&p.down<=0){p.hit=false;p.mesh.position.copy(this.city.sidewalkPoint());p.mesh.position.y=.85}
+    car.angle = point.angle + (side > 0 ? 0 : Math.PI);
+    car.speed = 0;
+    car.parked = true;
+    this.scene.add(car.mesh);
+    this.cars.push(car);
+    return car;
+  }
+
+  spawnPedestrian() {
+    const rand = this.city.rand;
+    const ped = new THREE.Group();
+    const shirt = [0xd8604d, 0x4b8fa0, 0xe0bd64, 0x777fc0, 0x6da173, 0x9c6b9e][
+      Math.floor(rand() * 6)
+    ];
+    box(ped, 0.72, 1.05, 0.45, shirt, 0, 1.28, 0);
+    box(ped, 0.5, 0.5, 0.5, 0xc99a72, 0, 2.03, 0);
+    box(ped, 0.24, 0.85, 0.28, 0x334553, -0.22, 0.48, 0);
+    box(ped, 0.24, 0.85, 0.28, 0x334553, 0.22, 0.48, 0);
+    const arms = [
+      box(ped, 0.2, 0.8, 0.22, shirt, -0.48, 1.3, 0),
+      box(ped, 0.2, 0.8, 0.22, shirt, 0.48, 1.3, 0)
+    ];
+    const cell = -LIMIT + BLOCK / 2 + Math.floor(rand() * 10) * BLOCK;
+    const offset = rand() < 0.5 ? -12.5 : 12.5;
+    if (rand() < 0.5) {
+      ped.position.set(cell + offset, 0, cell + (rand() - 0.5) * 18);
+    } else {
+      ped.position.set(cell + (rand() - 0.5) * 18, 0, cell + offset);
+    }
+    this.scene.add(ped);
+    this.peds.push({
+      mesh: ped,
+      arms,
+      angle: rand() * Math.PI * 2,
+      speed: 1.3 + rand() * 0.7,
+      wander: rand() * 3,
+      down: 0
+    });
+  }
+
+  update(dt, time) {
+    const rand = this.city.rand;
+    const playerCar = this.game.player ? this.game.player.car : null;
+
+    for (const car of this.cars) {
+      if (car.parked || car === playerCar) continue;
+      car.hitCooldown = Math.max(0, car.hitCooldown - dt);
+      car.ai.turnTimer -= dt;
+      const headingX = Math.sin(car.angle);
+      const headingZ = Math.cos(car.angle);
+      let blocked = false;
+
+      for (const other of this.cars) {
+        if (other === car || other.parked || other === playerCar) continue;
+        const dx = other.mesh.position.x - car.mesh.position.x;
+        const dz = other.mesh.position.z - car.mesh.position.z;
+        const distance = Math.hypot(dx, dz);
+        if (distance < 12 && (dx * headingX + dz * headingZ) / (distance || 1) > 0.6) {
+          blocked = true;
+        }
+      }
+      if (playerCar) {
+        const dx = playerCar.mesh.position.x - car.mesh.position.x;
+        const dz = playerCar.mesh.position.z - car.mesh.position.z;
+        const distance = Math.hypot(dx, dz);
+        if (distance < 13 && (dx * headingX + dz * headingZ) / (distance || 1) > 0.6) {
+          blocked = true;
+        }
+      }
+
+      const target = blocked ? 1.5 : car.ai.cruise;
+      car.speed += Math.max(-20 * dt, Math.min(10 * dt, target - car.speed));
+      const nextX = car.mesh.position.x + headingX * car.speed * dt;
+      const nextZ = car.mesh.position.z + headingZ * car.speed * dt;
+      if (Math.abs(nextX) > LIMIT - 6 || Math.abs(nextZ) > LIMIT - 6) {
+        car.angle += Math.PI;
+        car.speed = 2;
+      } else {
+        car.mesh.position.x = nextX;
+        car.mesh.position.z = nextZ;
+      }
+
+      if (Math.abs(headingX) > 0.5) {
+        const line = roadCoordinate(car.mesh.position.z);
+        car.mesh.position.z += (line - car.mesh.position.z) * Math.min(1, dt * 4);
+        const crossing = roadCoordinate(car.mesh.position.x);
+        if (car.ai.turnTimer <= 0 && Math.abs(car.mesh.position.x - crossing) < 2.5) {
+          car.angle = headingX > 0 ? Math.PI / 2 : -Math.PI / 2;
+          car.mesh.position.x = crossing;
+          car.ai.turnTimer = 5 + rand() * 9;
+        }
+      } else {
+        const line = roadCoordinate(car.mesh.position.x);
+        car.mesh.position.x += (line - car.mesh.position.x) * Math.min(1, dt * 4);
+        const crossing = roadCoordinate(car.mesh.position.z);
+        if (car.ai.turnTimer <= 0 && Math.abs(car.mesh.position.z - crossing) < 2.5) {
+          car.angle = headingZ > 0 ? Math.PI : 0;
+          car.mesh.position.z = crossing;
+          car.ai.turnTimer = 5 + rand() * 9;
+        }
+      }
+      syncCarVisual(car, dt);
+    }
+
+    for (const ped of this.peds) {
+      if (ped.down > 0) {
+        ped.down -= dt;
+        if (ped.down <= 0) ped.mesh.rotation.z = 0;
+        continue;
+      }
+
+      let fleeing = false;
+      if (playerCar && Math.abs(playerCar.speed) > 4) {
+        const dx = ped.mesh.position.x - playerCar.mesh.position.x;
+        const dz = ped.mesh.position.z - playerCar.mesh.position.z;
+        if (Math.hypot(dx, dz) < 12) {
+          ped.angle = Math.atan2(dx, dz);
+          fleeing = true;
+        }
+      }
+
+      if (!fleeing) {
+        ped.wander -= dt;
+        if (ped.wander <= 0) {
+          ped.angle += (rand() - 0.5) * Math.PI * 1.5;
+          ped.wander = 1.5 + rand() * 3;
+        }
+      }
+
+      const move = (fleeing ? ped.speed * 2.4 : ped.speed) * dt;
+      const alongX = Math.abs(ped.mesh.position.x - roadCoordinate(ped.mesh.position.x)) < ROAD_HALF + 4;
+      const nextX = ped.mesh.position.x + Math.sin(ped.angle) * (alongX ? move : 0);
+      const nextZ = ped.mesh.position.z + Math.cos(ped.angle) * (alongX ? 0 : move);
+      if (Math.abs(nextX) < LIMIT - 3 && Math.abs(nextZ) < LIMIT - 3) {
+        ped.mesh.position.x = nextX;
+        ped.mesh.position.z = nextZ;
+      } else {
+        ped.angle += Math.PI;
+      }
+      ped.mesh.rotation.y = ped.angle;
+      const swing = Math.sin(time * (fleeing ? 14 : 7) + ped.angle) * 0.45;
+      ped.arms[0].rotation.x = swing;
+      ped.arms[1].rotation.x = -swing;
     }
   }
-  nearestCar(pos,max=4){let found=null,d=max;for(const c of this.cars){const n=Math.hypot(c.position.x-pos.x,c.position.z-pos.z);if(n<d&&!c.occupied){found=c;d=n}}return found}
-  destroy(){for(const c of this.cars)this.scene.remove(c.mesh);for(const p of this.peds)this.scene.remove(p.mesh)}
+
+  nearestCar(position, radius, includePolice = false) {
+    let best = null;
+    let bestDistance = radius;
+    for (const car of this.cars) {
+      if (!includePolice && car.kind === 'police') continue;
+      const distance = Math.hypot(
+        car.mesh.position.x - position.x,
+        car.mesh.position.z - position.z
+      );
+      if (distance < bestDistance) {
+        best = car;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  nearestPed(position, radius) {
+    let best = null;
+    let bestDistance = radius;
+    for (const ped of this.peds) {
+      if (ped.down > 0) continue;
+      const distance = Math.hypot(
+        ped.mesh.position.x - position.x,
+        ped.mesh.position.z - position.z
+      );
+      if (distance < bestDistance) {
+        best = ped;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  knockDown(ped) {
+    ped.down = 7;
+    ped.mesh.rotation.z = Math.PI / 2;
+  }
+
+  removeCar(car) {
+    const index = this.cars.indexOf(car);
+    if (index >= 0) this.cars.splice(index, 1);
+    this.scene.remove(car.mesh);
+  }
 }

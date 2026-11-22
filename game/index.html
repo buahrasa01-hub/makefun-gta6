@@ -2,24 +2,41 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-  <meta name="theme-color" content="#f6b35d">
-  <meta name="description" content="Explore Solhaven, run deliveries, and escape the Harbor Crew's trouble.">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f1a85a">
   <title>Solhaven Streets</title>
   <link rel="stylesheet" href="./css/style.css">
   <script type="importmap">{"imports":{"three":"./vendor/three/three.module.min.js"}}</script>
-  <script type="module" src="./js/main.js"></script>
 </head>
 <body>
-  <div id="game"></div>
-  <div id="hud" class="hidden">
-    <header class="topbar"><strong id="cash">$0</strong><div class="health"><span id="healthbar"></span></div><span id="healthtext">100</span><span id="wanted"></span><span id="speed"></span></header>
-    <section class="mission"><b id="missiontitle"></b><span id="objective"></span><small id="distance"></small><small id="timer"></small></section>
-    <canvas id="map" width="192" height="192"></canvas>
-    <div id="toast"></div><div id="damage"></div>
-  </div>
-  <section id="screen" class="screen">
-    <article class="panel"><p class="eyebrow">SOLHAVEN · COASTAL COUNTY</p><h1 id="screen-title">SOLHAVEN<br><em>STREETS</em></h1><p id="screen-copy">A new route. A new crew. Keep moving.</p><div id="screen-extra"></div><button id="primary">Start Run</button><button id="secondary" class="secondary hidden">Continue</button><p class="controls">WASD move/drive · Mouse drag look · Shift run · E enter/exit · Click punch · Space brake · Esc pause</p></article>
-  </section>
+  <main id="game">
+    <canvas id="world" aria-label="Solhaven game world"></canvas>
+    <section id="hud">
+      <div class="topline">
+        <div class="cash-chip"><small>CASH</small><strong>$<span id="cash">0</span></strong></div>
+        <div class="health-chip"><small>HEALTH</small><div class="bar"><i id="health-bar"></i></div><span id="health">100</span></div>
+        <div class="wanted-chip"><small>WANTED</small><div id="wanted">☆☆☆☆☆</div></div>
+        <div id="heli" class="hidden">HELI OVERHEAD</div>
+      </div>
+      <div class="mission-card">
+        <small id="mission-label">HARBOR CREW</small>
+        <h2 id="mission-title">Free Roam</h2>
+        <p id="objective">Explore Solhaven</p>
+        <div class="mission-meta"><span id="distance"></span><span id="timer"></span></div>
+      </div>
+      <div class="right-rail">
+        <canvas id="map" width="190" height="190"></canvas>
+        <div id="speed" class="hidden">0 <small>KM/H</small></div>
+        <div id="garage-count">GARAGE · 0 STORED</div>
+        <div id="abilities"></div>
+      </div>
+      <div id="toast"></div>
+      <div id="damage-flash"></div>
+      <div id="wanted-edge"></div>
+    </section>
+    <section id="screen" class="screen"></section>
+    <section id="garage-screen" class="screen hidden"></section>
+  </main>
+  <script type="module" src="./js/main.js"></script>
 </body>
 </html>
